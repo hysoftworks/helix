@@ -311,8 +311,37 @@ RunningProgram runProgram2(const RunOptions & options)
 
     /* Fork. */
     Pid pid{startProcess([&]() {
-        if (options.environment)
-            replaceEnv(*options.environment);
+        // HACK: (the default wrapper for) helix sets LD_PRELOAD to mimalloc for performance gain.
+        // But we cannot assume that this program will support mimalloc too (crucially, nixpkgs-wrapped vscode doesn't).
+        // So we sanitize first:
+        auto env = options.environment ? *options.environment : getEnv();
+        if (env.contains("LD_PRELOAD")) {
+            std::string result;
+            auto preloads = std::string(env["LD_PRELOAD"]);
+            std::vector<std::string> parts;
+            size_t pos = 0;
+
+            while (true) {
+                size_t nextPos = preloads.find(':', pos);
+                std::string part = preloads.substr(pos, nextPos == std::string::npos ? std::string::npos : nextPos - pos);
+                if (part.find("mimalloc") == std::string::npos) {
+                    parts.push_back(part);
+                } else {
+                    printTalkative("runProgram2: removing mimalloc from LD_PRELOAD");
+                }
+
+                if (nextPos == std::string::npos || nextPos + 1 >= preloads.length()) break;
+                pos = nextPos + 1;
+            }
+
+            for (size_t i = 0; i < parts.size(); ++i) {
+                result += parts[i];
+                if (i < parts.size() - 1) result += ':';
+            }
+            env["LD_PRELOAD"] = result;
+        }
+        replaceEnv(env);
+
         if (options.captureStdout && dup2(out.writeSide.get(), STDOUT_FILENO) == -1)
             throw SysError("dupping stdout");
         if (options.mergeStderrToStdout)
