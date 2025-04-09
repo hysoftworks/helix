@@ -42,6 +42,8 @@
   mdbook-linkcheck,
   mercurial,
   meson,
+  mimalloc,
+  makeBinaryWrapper,
   ninja,
   ncurses,
   openssl,
@@ -280,6 +282,7 @@ stdenv.mkDerivation (finalAttrs: {
       # Required for libstd++ assertions that leaks inside of the final binary.
       removeReferencesTo
       dtrace-generator
+      makeBinaryWrapper
     ]
     ++ [
       (lib.getBin lowdown-unsandboxed)
@@ -327,6 +330,7 @@ stdenv.mkDerivation (finalAttrs: {
       pegtl
       capnproto-lix
       dtrace-headers
+      mimalloc
     ]
     ++ lib.optionals hostPlatform.isLinux [
       libseccomp
@@ -453,6 +457,9 @@ stdenv.mkDerivation (finalAttrs: {
     + ''
       # Drop all references to libstd++ include files due to `__FILE__` leaking in libstd++ assertions.
       find "$out" -type f -exec remove-references-to -t ${stdenv.cc.cc.stdenv.cc.cc} '{}' +
+
+      # UGLY!!!: wrap the nix program to use mimalloc
+      wrapProgram $out/bin/nix --prefix LD_PRELOAD : ${mimalloc}/lib/libmimalloc.so
     '';
 
   doInstallCheck = finalAttrs.doCheck;
