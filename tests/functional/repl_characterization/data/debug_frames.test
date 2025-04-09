@@ -2,7 +2,7 @@
 
 :c at the root repl is not allowed since no debugger is running yet
   nix-repl> :c
-  error: unknown command ':c'
+  error: continue command is only available in debug mode (see --debugger)
 
 :c and other commands become available once a debugger starts
   nix-repl> with {}; a
@@ -21,6 +21,8 @@
     :bl <expr>                   Build a derivation, creating GC roots in the
                                  working directory
     :e, :edit <expr>             Open package or function in $EDITOR
+    :o, :open                    Edit the last executed expression in $EDITOR, then execute the saved contents
+    :env                         Show env stack
     :i <expr>                    Build derivation, then install result into
                                  current profile
     :l, :load <path>             Load Nix expression and add it to scope
@@ -40,7 +42,6 @@
     :?, :help                    Brings up this help menu
 
           Debug mode commands
-    :env             Show env stack
     :bt, :backtrace  Show trace stack
     :st              Show current trace
     :st <idx>        Change to another trace in the stack
@@ -70,7 +71,7 @@ and resume execution
 
 the debugger is once again disabled
   nix-repl> :c
-  error: unknown command ':c'
+  error: continue command is only available in debug mode (see --debugger)
 
 leaving the debugger from a toplevel error and entering it again doesn't leave old frames visible
   nix-repl> with {}; a

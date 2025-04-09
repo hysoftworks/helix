@@ -6,6 +6,7 @@
 #include <climits>
 #include <string_view>
 
+#include "lix/libstore/temporary-dir.hh"
 #include "lix/libutil/box_ptr.hh"
 #include "lix/libcmd/repl-interacter.hh"
 #include "lix/libcmd/repl.hh"
@@ -15,6 +16,8 @@
 #include "lix/libexpr/eval.hh"
 #include "lix/libexpr/eval-settings.hh"
 #include "lix/libexpr/attr-path.hh"
+#include "lix/libutil/file-descriptor.hh"
+#include "lix/libutil/file-system.hh"
 #include "lix/libutil/signals.hh"
 #include "lix/libstore/store-api.hh"
 #include "lix/libstore/log-store.hh"
@@ -147,7 +150,7 @@ struct NixRepl
      * to a derivation, or evaluates to an invalid derivation.
      */
     StorePath getDerivationPath(Value & v);
-    ProcessLineResult processLine(std::string line);
+    ProcessLineResult processLine(std::string line, std::string& last_expr);
 
     void loadFile(const Path & path);
     void loadFlake(const std::string & flakeRef);
@@ -299,7 +302,8 @@ ReplExitStatus NixRepl::mainLoop()
     logger->pause();
 
     std::string input;
-
+    // used to implement commands that depend on the last executed expression, eg. :open
+    std::string last_expr;
     while (true) {
         _isInterrupted = false;
 
@@ -316,7 +320,7 @@ ReplExitStatus NixRepl::mainLoop()
             return ReplExitStatus::QuitAll;
         }
         try {
-            switch (processLine(input)) {
+            switch (processLine(input, last_expr)) {
                 case ProcessLineResult::Quit:
                     return ReplExitStatus::QuitAll;
                 case ProcessLineResult::Continue:
@@ -512,7 +516,7 @@ void NixRepl::loadDebugTraceEnv(const DebugTrace & dt)
     }
 }
 
-ProcessLineResult NixRepl::processLine(std::string line)
+ProcessLineResult NixRepl::processLine(std::string line, std::string& last_expr)
 {
     line = trim(line);
     if (line.empty())
@@ -542,6 +546,7 @@ ProcessLineResult NixRepl::processLine(std::string line)
              << "  :bl <expr>                   Build a derivation, creating GC roots in the\n"
              << "                               working directory\n"
              << "  :e, :edit <expr>             Open package or function in $EDITOR\n"
+             << "  :o, :open                    Edit the last executed expression in $EDITOR, then execute the saved contents\n"
              << "  :env                         Show env stack\n"
              << "  :i <expr>                    Build derivation, then install result into\n"
              << "                               current profile\n"
@@ -654,6 +659,28 @@ ProcessLineResult NixRepl::processLine(std::string line)
     else if (command == ":r" || command == ":reload") {
         state.resetFileCache();
         reloadFiles();
+    }
+
+    else if (command == ":o" || command == ":open") {
+        // TODO(gilice): consider if we want this to be a static path, instead of generating a temporary file on every :open
+        std::pair<AutoCloseFD,Path> tmp_file = createTempFile("nix-repl");
+        writeFull(tmp_file.first.get(), std::string_view(last_expr));
+        tmp_file.first.close();
+
+        // Open in EDITOR
+        auto args = editorFor(SourcePath(CanonPath(tmp_file.second)));
+        auto editor = args.front();
+        args.pop_front();
+
+        // runProgram redirects stdout to a StringSink,
+        // using runProgram2 to allow editors to display their UI
+        runProgram2(RunOptions { .program = editor, .searchPath = true, .args = args }).wait();
+
+        // read back what the user wrote, and execute it.
+        // also remove the temporary file we created.
+        std::string contents = readFile(tmp_file.second);
+        std::remove(tmp_file.second.c_str());
+        return processLine(contents, last_expr);
     }
 
     else if (command == ":e" || command == ":edit") {
@@ -870,6 +897,7 @@ ProcessLineResult NixRepl::processLine(std::string line)
         throw Error("unknown command '%1%'", command);
 
     else {
+        last_expr = line;
         size_t p = line.find('=');
         std::string name;
         if (p != std::string::npos &&

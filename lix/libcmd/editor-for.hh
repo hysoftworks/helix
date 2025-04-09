@@ -7,6 +7,10 @@
 namespace nix {
 
 /**
+ * Helper function to generate args that invoke $EDITOR on file.
+ */
+Strings editorFor(const SourcePath & file);
+/**
  * Helper function to generate args that invoke $EDITOR on
  * filename:lineno.
  */
