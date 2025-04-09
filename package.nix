@@ -261,6 +261,7 @@ stdenv.mkDerivation (finalAttrs: {
       (lib.mesonBool "enable-tests" (finalAttrs.finalPackage.doCheck || lintInsteadOfBuild))
       (lib.mesonBool "enable-docs" canRunInstalled)
       (lib.mesonBool "werror" werror)
+      (lib.mesonBool "b_lto" true)
     ]
     ++ lib.optional (hostPlatform != buildPlatform) "--cross-file=${mesonCrossFile}"
     ++ sanitizeOpts;
