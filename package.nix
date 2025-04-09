@@ -64,7 +64,7 @@
 
   busybox-sandbox-shell,
 
-  pname ? "lix",
+  pname ? "helix",
   versionSuffix ? "",
   officialRelease ? __forDefaults.versionJson.official_release,
   # Set to true to build the release notes for the next release.
